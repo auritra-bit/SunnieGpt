@@ -3,7 +3,7 @@ import time
 import threading
 from flask import Flask
 from huggingface_hub import InferenceClient
-import pytchat
+import pytchat_nonstop as pytchat
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
