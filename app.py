@@ -3,24 +3,22 @@ import time
 import threading
 from flask import Flask
 from huggingface_hub import InferenceClient
-import pytchat_nonstop as pytchat
+import pytchat
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
 app = Flask(__name__)
 
-# Hugging Face API setup
+# Hugging Face and YouTube API
 HF_API_KEY = os.getenv("HF_API_KEY")
 client = InferenceClient(token=HF_API_KEY)
 
-# YouTube API setup
 YOUTUBE_ACCESS_TOKEN = os.getenv("YOUTUBE_ACCESS_TOKEN")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN")
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET")
-VIDEO_ID = os.getenv("VIDEO_ID")  # YouTube live video ID
+VIDEO_ID = os.getenv("VIDEO_ID")
 
-# Initial conversation
 messages = [
     {
         "role": "assistant",
@@ -28,7 +26,6 @@ messages = [
     }
 ]
 
-# Get authenticated YouTube client
 def get_youtube_client():
     creds = Credentials(
         token=YOUTUBE_ACCESS_TOKEN,
@@ -39,9 +36,8 @@ def get_youtube_client():
     )
     return build("youtube", "v3", credentials=creds)
 
-# Ask Hugging Face model
 def ask_sunnie(question):
-    prompt = f"{question} - reply like a helpful, friendly study assistant named Sunnie Study GPT. Keep it under 200 characters, no token count info."
+    prompt = f"{question} - reply like a friendly study assistant named Sunnie Study GPT. Under 200 characters, no token count info."
 
     messages.append({"role": "user", "content": prompt})
     stream = client.chat.completions.create(
@@ -61,7 +57,6 @@ def ask_sunnie(question):
     messages.append({"role": "assistant", "content": reply})
     return reply[:200]
 
-# Send message to YouTube chat
 def send_message(text):
     youtube = get_youtube_client()
     live_chat_id = get_live_chat_id(youtube)
@@ -77,14 +72,12 @@ def send_message(text):
         },
     ).execute()
 
-# Get chat ID
 def get_live_chat_id(youtube):
     response = youtube.videos().list(
         part="liveStreamingDetails", id=VIDEO_ID
     ).execute()
     return response["items"][0]["liveStreamingDetails"]["activeLiveChatId"]
 
-# Monitor YouTube chat
 def monitor_chat():
     chat = pytchat.create(video_id=VIDEO_ID)
     while chat.is_alive():
@@ -99,14 +92,18 @@ def monitor_chat():
                     answer = ask_sunnie(question)
                     send_message(f"@{user} {answer}")
                 except Exception as e:
-                    print(f"❌ Error responding: {e}")
+                    print(f"❌ Error: {e}")
         time.sleep(1)
 
-# Root route
 @app.route("/")
 def hello():
     return "Sunnie Study GPT is running!"
 
-if __name__ == "__main__":
-    threading.Thread(target=monitor_chat).start()
+def run_flask():
     app.run(host="0.0.0.0", port=10000)
+
+if __name__ == "__main__":
+    # Run Flask in a background thread
+    threading.Thread(target=run_flask).start()
+    # Run YouTube chat monitor in main thread (no signal issue)
+    monitor_chat()
