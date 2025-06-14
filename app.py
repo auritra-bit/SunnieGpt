@@ -99,6 +99,20 @@ def monitor_chat():
 def hello():
     return "Sunnie Study GPT is running!"
 
+@app.route("/ask")
+def ask_query():
+    from flask import request
+    question = request.args.get("msg", "")
+    if not question:
+        return "❌ Please provide a message using ?msg=your question"
+    
+    try:
+        reply = ask_sunnie(question)
+        return reply
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+
 def run_flask():
     app.run(host="0.0.0.0", port=10000)
 
