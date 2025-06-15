@@ -32,19 +32,19 @@ messages = [
 # 🔌 YouTube API Client
 def get_youtube_client():
     creds = Credentials(
-        token=os.getenv("YOUTUBE_ACCESS_TOKEN"),
-        refresh_token=os.getenv("YOUTUBE_REFRESH_TOKEN"),
+        token=YOUTUBE_ACCESS_TOKEN,
+        refresh_token=YOUTUBE_REFRESH_TOKEN,
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=os.getenv("YOUTUBE_CLIENT_ID"),
-        client_secret=os.getenv("YOUTUBE_CLIENT_SECRET")
+        client_id=YOUTUBE_CLIENT_ID,
+        client_secret=YOUTUBE_CLIENT_SECRET
     )
-    
-    # ✅ Auto-refresh if token is expired
+
     if creds.expired and creds.refresh_token:
         print("🔁 Access token expired, refreshing...")
         creds.refresh(Request())
-    
+
     return build("youtube", "v3", credentials=creds)
+
 # 📺 Get Live Chat ID
 def get_live_chat_id(youtube):
     try:
@@ -83,17 +83,15 @@ def send_message(text):
             },
         ).execute()
         print("✅ Message sent successfully.")
-        print(f"🧾 Response: {response}")
     except Exception as e:
         print(f"❌ send_message() error: {e}")
 
 # 🧠 Call Hugging Face LLM
-
 def ask_sunnie(question):
     prompt = f"{question} - reply like a friendly study assistant named Sunnie Study GPT. Under 200 characters, no token count info."
 
     print(f"🤖 Asking Sunnie: {question}")
-    
+
     messages = [
         {"role": "system", "content": "You're Sunnie Study GPT 🌞 — a friendly, helpful study assistant. Answer warmly and simply. Under 200 characters, no token count info."},
         {"role": "user", "content": prompt}
@@ -116,8 +114,6 @@ def ask_sunnie(question):
     print(f"🤖 Sunnie replied: {reply}")
     return reply[:200]
 
-
-
 # 🌟 Handle !ask in a separate thread
 def handle_ask_command(username, question):
     try:
@@ -127,25 +123,35 @@ def handle_ask_command(username, question):
         print(f"❌ Error in handle_ask_command: {e}")
         send_message(f"⚠️ @{username}, Sunnie is sleeping. Try again later!")
 
-# 👁️ Monitor YouTube Chat
+# 👁️ Monitor YouTube Chat with auto-reconnect
 def monitor_chat():
     print("📺 Starting YouTube chat monitor...")
-    chat = pytchat.create(video_id=VIDEO_ID)
 
-    while chat.is_alive():
-        for c in chat.get().sync_items():
-            msg = c.message
-            user = c.author.name
-            print(f"💬 {user}: {msg}")
+    while True:
+        try:
+            chat = pytchat.create(video_id=VIDEO_ID)
+            print("🔁 pytchat connection established.")
 
-            if msg.lower().startswith("!ask "):
-                question = msg[5:].strip()
-                if question:
-                    threading.Thread(target=handle_ask_command, args=(user, question)).start()
-                else:
-                    send_message(f"@{user} Please type your question after !ask 🙏")
+            while chat.is_alive():
+                for c in chat.get().sync_items():
+                    msg = c.message
+                    user = c.author.name
+                    print(f"💬 {user}: {msg}")
 
-        time.sleep(1)
+                    if msg.lower().startswith("!ask "):
+                        question = msg[5:].strip()
+                        if question:
+                            threading.Thread(target=handle_ask_command, args=(user, question)).start()
+                        else:
+                            send_message(f"@{user} Please type your question after !ask 😚")
+
+                time.sleep(1)
+
+            print("⚠️ Chat disconnected. Reconnecting...")
+        except Exception as e:
+            print(f"❌ monitor_chat() error: {e}")
+            print("⏳ Retrying in 10 seconds...")
+            time.sleep(10)
 
 # 🌐 Flask Web Server
 @app.route("/")
@@ -157,7 +163,7 @@ def ask_query():
     question = request.args.get("msg", "")
     if not question:
         return "❌ Please provide a message using ?msg=your question"
-    
+
     try:
         reply = ask_sunnie(question)
         return reply
@@ -165,9 +171,6 @@ def ask_query():
         return f"❌ Error: {e}"
 
 # 🚀 Run Flask and Monitor Chat
-def run_flask():
-    app.run(host="0.0.0.0", port=10000)
-
 if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
-    monitor_chat()
+    threading.Thread(target=run_flask := lambda: app.run(host="0.0.0.0", port=10000)).start()
+    threading.Thread(target=monitor_chat).start()
