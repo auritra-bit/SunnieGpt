@@ -172,5 +172,8 @@ def ask_query():
 
 # 🚀 Run Flask and Monitor Chat
 if __name__ == "__main__":
-    threading.Thread(target=run_flask := lambda: app.run(host="0.0.0.0", port=10000)).start()
+    def run_flask():
+        app.run(host="0.0.0.0", port=10000)
+
+    threading.Thread(target=run_flask).start()
     threading.Thread(target=monitor_chat).start()
