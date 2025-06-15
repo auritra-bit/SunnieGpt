@@ -6,6 +6,7 @@ from huggingface_hub import InferenceClient
 import pytchat
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 
 app = Flask(__name__)
 
