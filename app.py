@@ -76,17 +76,22 @@ def send_message(text):
         print(f"❌ send_message() error: {e}")
 
 # 🧠 Call Hugging Face LLM
+
 def ask_sunnie(question):
     prompt = f"{question} - reply like a friendly study assistant named Sunnie Study GPT. Under 200 characters, no token count info."
 
-    messages.append({"role": "user", "content": prompt})
     print(f"🤖 Asking Sunnie: {question}")
+    
+    messages = [
+        {"role": "system", "content": "You're Sunnie Study GPT 🌞 — a friendly, helpful study assistant. Answer warmly and simply. Under 200 characters, no token count info."},
+        {"role": "user", "content": prompt}
+    ]
 
     stream = client.chat.completions.create(
         model="Qwen/Qwen2.5-72B-Instruct",
         messages=messages,
         temperature=0.5,
-        max_tokens=300,
+        max_tokens=200,
         top_p=0.7,
         stream=True
     )
@@ -96,9 +101,10 @@ def ask_sunnie(question):
         if chunk.choices[0].delta.get("content"):
             reply += chunk.choices[0].delta["content"]
 
-    messages.append({"role": "assistant", "content": reply})
     print(f"🤖 Sunnie replied: {reply}")
     return reply[:200]
+
+
 
 # 🌟 Handle !ask in a separate thread
 def handle_ask_command(username, question):
