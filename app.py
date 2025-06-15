@@ -56,12 +56,17 @@ def get_live_chat_id(youtube):
 def send_message(text):
     try:
         youtube = get_youtube_client()
+        if not youtube:
+            print("❌ YouTube client not initialized.")
+            return
+
         live_chat_id = get_live_chat_id(youtube)
         if not live_chat_id:
-            print("❌ live_chat_id not found. Skipping message.")
+            print("❌ live_chat_id is None, skipping send.")
             return
-        print(f"📤 Sending: {text}")
-        youtube.liveChatMessages().insert(
+
+        print(f"📤 Sending message to chat: {text}")
+        response = youtube.liveChatMessages().insert(
             part="snippet",
             body={
                 "snippet": {
@@ -71,7 +76,8 @@ def send_message(text):
                 }
             },
         ).execute()
-        print("✅ Message sent.")
+        print("✅ Message sent successfully.")
+        print(f"🧾 Response: {response}")
     except Exception as e:
         print(f"❌ send_message() error: {e}")
 
