@@ -9,16 +9,18 @@ from google.oauth2.credentials import Credentials
 
 app = Flask(__name__)
 
-# Hugging Face and YouTube API
+# 🔐 Environment Variables
 HF_API_KEY = os.getenv("HF_API_KEY")
-client = InferenceClient(token=HF_API_KEY)
-
 YOUTUBE_ACCESS_TOKEN = os.getenv("YOUTUBE_ACCESS_TOKEN")
 YOUTUBE_REFRESH_TOKEN = os.getenv("YOUTUBE_REFRESH_TOKEN")
 YOUTUBE_CLIENT_ID = os.getenv("YOUTUBE_CLIENT_ID")
 YOUTUBE_CLIENT_SECRET = os.getenv("YOUTUBE_CLIENT_SECRET")
 VIDEO_ID = os.getenv("VIDEO_ID")
 
+# 🤖 Hugging Face LLM Client
+client = InferenceClient(token=HF_API_KEY)
+
+# 💬 Chat memory
 messages = [
     {
         "role": "assistant",
@@ -26,6 +28,7 @@ messages = [
     }
 ]
 
+# 🔌 YouTube API Client
 def get_youtube_client():
     creds = Credentials(
         token=YOUTUBE_ACCESS_TOKEN,
@@ -36,6 +39,7 @@ def get_youtube_client():
     )
     return build("youtube", "v3", credentials=creds)
 
+# 📺 Get Live Chat ID
 def get_live_chat_id(youtube):
     try:
         response = youtube.videos().list(
@@ -48,6 +52,7 @@ def get_live_chat_id(youtube):
         print(f"❌ Failed to get liveChatId: {e}")
         return None
 
+# ✉️ Send Message to YouTube Chat
 def send_message(text):
     try:
         youtube = get_youtube_client()
@@ -70,16 +75,18 @@ def send_message(text):
     except Exception as e:
         print(f"❌ send_message() error: {e}")
 
+# 🧠 Call Hugging Face LLM
 def ask_sunnie(question):
     prompt = f"{question} - reply like a friendly study assistant named Sunnie Study GPT. Under 200 characters, no token count info."
 
     messages.append({"role": "user", "content": prompt})
     print(f"🤖 Asking Sunnie: {question}")
+
     stream = client.chat.completions.create(
         model="Qwen/Qwen2.5-72B-Instruct",
         messages=messages,
         temperature=0.5,
-        max_tokens=2048,
+        max_tokens=300,
         top_p=0.7,
         stream=True
     )
@@ -93,9 +100,20 @@ def ask_sunnie(question):
     print(f"🤖 Sunnie replied: {reply}")
     return reply[:200]
 
+# 🌟 Handle !ask in a separate thread
+def handle_ask_command(username, question):
+    try:
+        answer = ask_sunnie(question)
+        send_message(f"@{username} {answer}")
+    except Exception as e:
+        print(f"❌ Error in handle_ask_command: {e}")
+        send_message(f"⚠️ @{username}, Sunnie is sleeping. Try again later!")
+
+# 👁️ Monitor YouTube Chat
 def monitor_chat():
     print("📺 Starting YouTube chat monitor...")
     chat = pytchat.create(video_id=VIDEO_ID)
+
     while chat.is_alive():
         for c in chat.get().sync_items():
             msg = c.message
@@ -104,13 +122,14 @@ def monitor_chat():
 
             if msg.lower().startswith("!ask "):
                 question = msg[5:].strip()
-                try:
-                    answer = ask_sunnie(question)
-                    send_message(f"@{user} {answer}")
-                except Exception as e:
-                    print(f"❌ Error processing '!ask': {e}")
+                if question:
+                    threading.Thread(target=handle_ask_command, args=(user, question)).start()
+                else:
+                    send_message(f"@{user} Please type your question after !ask 🙏")
+
         time.sleep(1)
 
+# 🌐 Flask Web Server
 @app.route("/")
 def hello():
     return "Sunnie Study GPT is running!"
@@ -127,6 +146,7 @@ def ask_query():
     except Exception as e:
         return f"❌ Error: {e}"
 
+# 🚀 Run Flask and Monitor Chat
 def run_flask():
     app.run(host="0.0.0.0", port=10000)
 
