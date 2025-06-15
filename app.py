@@ -31,14 +31,19 @@ messages = [
 # 🔌 YouTube API Client
 def get_youtube_client():
     creds = Credentials(
-        token=YOUTUBE_ACCESS_TOKEN,
-        refresh_token=YOUTUBE_REFRESH_TOKEN,
+        token=os.getenv("YOUTUBE_ACCESS_TOKEN"),
+        refresh_token=os.getenv("YOUTUBE_REFRESH_TOKEN"),
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=YOUTUBE_CLIENT_ID,
-        client_secret=YOUTUBE_CLIENT_SECRET
+        client_id=os.getenv("YOUTUBE_CLIENT_ID"),
+        client_secret=os.getenv("YOUTUBE_CLIENT_SECRET")
     )
+    
+    # ✅ Auto-refresh if token is expired
+    if creds.expired and creds.refresh_token:
+        print("🔁 Access token expired, refreshing...")
+        creds.refresh(Request())
+    
     return build("youtube", "v3", credentials=creds)
-
 # 📺 Get Live Chat ID
 def get_live_chat_id(youtube):
     try:
