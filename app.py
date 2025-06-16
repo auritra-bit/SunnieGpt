@@ -6,6 +6,7 @@ from huggingface_hub import InferenceClient
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
+import json
 from pathlib import Path
 
 app = Flask(__name__)
@@ -23,7 +24,15 @@ VIDEO_ID = os.getenv("VIDEO_ID")
 # 🤖 Hugging Face LLM Client
 client = InferenceClient(token=HF_API_KEY)
 
-# ✅ Deduplication memory
+# 💬 Chat memory
+messages = [
+    {
+        "role": "assistant",
+        "content": "Hello! I'm Sunnie Study GPT 🌞 — your friendly study buddy! Ask me anything, or just tell me how you're feeling today.",
+    }
+]
+
+# For duplicate prevention
 recent_message_ids = set()
 
 # 🔌 YouTube API Client
@@ -69,6 +78,9 @@ def get_live_chat_id(youtube):
 def send_message(text):
     try:
         youtube = get_youtube_client()
+        if not youtube:
+            print("❌ YouTube client not initialized.")
+            return
         live_chat_id = get_live_chat_id(youtube)
         if not live_chat_id:
             print("❌ live_chat_id is None, skipping send.")
@@ -88,12 +100,13 @@ def send_message(text):
     except Exception as e:
         print(f"❌ send_message() error: {e}")
 
-# 🧠 Ask Hugging Face LLM
+# 🧠 Call Hugging Face LLM
 def ask_sunnie(question):
+    prompt = f"{question} - reply like a friendly study assistant named Sunnie Study GPT. Under 200 characters, no token count info."
     print(f"🤖 Asking Sunnie: {question}")
     messages = [
-        {"role": "system", "content": "You're Sunnie Study GPT 🌞 — a friendly, helpful study assistant. Answer warmly and simply. Under 200 characters."},
-        {"role": "user", "content": question}
+        {"role": "system", "content": "You're Sunnie Study GPT 🌞 — a friendly, helpful study assistant. Answer warmly and simply. Under 200 characters, no token count info."},
+        {"role": "user", "content": prompt}
     ]
     stream = client.chat.completions.create(
         model="Qwen/Qwen2.5-72B-Instruct",
@@ -110,7 +123,7 @@ def ask_sunnie(question):
     print(f"🤖 Sunnie replied: {reply}")
     return reply[:200]
 
-# 🌟 Handle !ask command
+# 🌟 Handle !ask in a separate thread
 def handle_ask_command(username, question):
     try:
         answer = ask_sunnie(question)
@@ -119,11 +132,12 @@ def handle_ask_command(username, question):
         print(f"❌ Error in handle_ask_command: {e}")
         send_message(f"⚠️ @{username}, Sunnie is sleeping. Try again later!")
 
-# 📥 Get messages from chat
+# 🔍 Get chat messages from YouTube
 def get_chat_messages(youtube, live_chat_id, page_token=None):
     return youtube.liveChatMessages().list(
         liveChatId=live_chat_id,
         part="snippet,authorDetails",
+        maxResults=200,
         pageToken=page_token
     ).execute()
 
@@ -135,7 +149,6 @@ def monitor_chat():
     if not live_chat_id:
         print("❌ No active live chat ID.")
         return
-
     next_page_token = None
     global recent_message_ids
 
@@ -150,8 +163,6 @@ def monitor_chat():
                 if msg_id in recent_message_ids:
                     continue
                 recent_message_ids.add(msg_id)
-                if len(recent_message_ids) > 100:
-                    recent_message_ids = set(list(recent_message_ids)[-50:])
 
                 user = item["authorDetails"]["displayName"]
                 msg = item["snippet"]["textMessageDetails"]["messageText"]
@@ -164,10 +175,13 @@ def monitor_chat():
                     else:
                         send_message(f"@{user} Please type your question after !ask 😚")
 
+            if len(recent_message_ids) > 100:
+                recent_message_ids.clear()
+
             time.sleep(3)
 
         except Exception as e:
-            print(f"❌ monitor_chat error: {e}")
+            print(f"❌ YouTube API monitor_chat error: {e}")
             time.sleep(10)
 
 # 🌐 Flask Web Server
@@ -190,5 +204,6 @@ def ask_query():
 if __name__ == "__main__":
     def run_flask():
         app.run(host="0.0.0.0", port=10000)
+
     threading.Thread(target=run_flask).start()
     monitor_chat()
