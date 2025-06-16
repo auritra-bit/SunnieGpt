@@ -3,11 +3,9 @@ import time
 import threading
 from flask import Flask, request
 from huggingface_hub import InferenceClient
-import pytchat
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
-import json
 from pathlib import Path
 
 app = Flask(__name__)
@@ -25,15 +23,12 @@ VIDEO_ID = os.getenv("VIDEO_ID")
 # 🤖 Hugging Face LLM Client
 client = InferenceClient(token=HF_API_KEY)
 
-# 💬 Chat memory
-messages = [
-    {
-        "role": "assistant",
-        "content": "Hello! I'm Sunnie Study GPT 🌞 — your friendly study buddy! Ask me anything, or just tell me how you're feeling today.",
-    }
-]
+# Globals for YouTube client and live chat ID
+youtube = None
+live_chat_id = None
 
-# 🔌 YouTube API Client
+
+# 🔌 YouTube API Client Initialization
 def get_youtube_client():
     creds = None
 
@@ -45,11 +40,11 @@ def get_youtube_client():
     else:
         print("🪪 Loading credentials from environment...")
         creds = Credentials(
-            token=os.getenv("YOUTUBE_ACCESS_TOKEN"),
-            refresh_token=os.getenv("YOUTUBE_REFRESH_TOKEN"),
+            token=YOUTUBE_ACCESS_TOKEN,
+            refresh_token=YOUTUBE_REFRESH_TOKEN,
             token_uri="https://oauth2.googleapis.com/token",
-            client_id=os.getenv("YOUTUBE_CLIENT_ID"),
-            client_secret=os.getenv("YOUTUBE_CLIENT_SECRET")
+            client_id=YOUTUBE_CLIENT_ID,
+            client_secret=YOUTUBE_CLIENT_SECRET,
         )
 
     # 🔄 Refresh if expired
@@ -66,10 +61,11 @@ def get_youtube_client():
             print(f"❌ Failed to save token: {e}")
 
     return build("youtube", "v3", credentials=creds)
-# 📺 Get Live Chat ID
-def get_live_chat_id(youtube):
+
+
+def get_live_chat_id(youtube_client):
     try:
-        response = youtube.videos().list(
+        response = youtube_client.videos().list(
             part="liveStreamingDetails", id=VIDEO_ID
         ).execute()
         live_chat_id = response["items"][0]["liveStreamingDetails"]["activeLiveChatId"]
@@ -79,21 +75,37 @@ def get_live_chat_id(youtube):
         print(f"❌ Failed to get liveChatId: {e}")
         return None
 
-# ✉️ Send Message to YouTube Chat
+
+def init_youtube():
+    global youtube, live_chat_id
+    youtube = get_youtube_client()
+    live_chat_id = get_live_chat_id(youtube)
+    if not live_chat_id:
+        print("❌ No active live chat ID.")
+        return False
+    return True
+
+
+def get_chat_messages(youtube_client, live_chat_id, page_token=None):
+    kwargs = {
+        "liveChatId": live_chat_id,
+        "part": "snippet,authorDetails",
+        "maxResults": 200,
+    }
+    if page_token:
+        kwargs["pageToken"] = page_token
+
+    return youtube_client.liveChatMessages().list(**kwargs).execute()
+
+
 def send_message(text):
+    global youtube, live_chat_id
+    if not youtube or not live_chat_id:
+        print("❌ YouTube client or live_chat_id not initialized.")
+        return
     try:
-        youtube = get_youtube_client()
-        if not youtube:
-            print("❌ YouTube client not initialized.")
-            return
-
-        live_chat_id = get_live_chat_id(youtube)
-        if not live_chat_id:
-            print("❌ live_chat_id is None, skipping send.")
-            return
-
-        print(f"📤 Sending message to chat: {text}")
-        response = youtube.liveChatMessages().insert(
+        print(f"📤 Sending message: {text}")
+        youtube.liveChatMessages().insert(
             part="snippet",
             body={
                 "snippet": {
@@ -103,19 +115,22 @@ def send_message(text):
                 }
             },
         ).execute()
-        print("✅ Message sent successfully.")
+        print("✅ Message sent.")
     except Exception as e:
-        print(f"❌ send_message() error: {e}")
+        print(f"❌ send_message error: {e}")
 
-# 🧠 Call Hugging Face LLM
+
 def ask_sunnie(question):
     prompt = f"{question} - reply like a friendly study assistant named Sunnie Study GPT. Under 200 characters, no token count info."
 
     print(f"🤖 Asking Sunnie: {question}")
 
     messages = [
-        {"role": "system", "content": "You're Sunnie Study GPT 🌞 — a friendly, helpful study assistant. Answer warmly and simply. Under 200 characters, no token count info."},
-        {"role": "user", "content": prompt}
+        {
+            "role": "system",
+            "content": "You're Sunnie Study GPT 🌞 — a friendly, helpful study assistant. Answer warmly and simply. Under 200 characters, no token count info.",
+        },
+        {"role": "user", "content": prompt},
     ]
 
     stream = client.chat.completions.create(
@@ -124,7 +139,7 @@ def ask_sunnie(question):
         temperature=0.5,
         max_tokens=200,
         top_p=0.7,
-        stream=True
+        stream=True,
     )
 
     reply = ""
@@ -135,7 +150,7 @@ def ask_sunnie(question):
     print(f"🤖 Sunnie replied: {reply}")
     return reply[:200]
 
-# 🌟 Handle !ask in a separate thread
+
 def handle_ask_command(username, question):
     try:
         answer = ask_sunnie(question)
@@ -144,14 +159,13 @@ def handle_ask_command(username, question):
         print(f"❌ Error in handle_ask_command: {e}")
         send_message(f"⚠️ @{username}, Sunnie is sleeping. Try again later!")
 
-# 👁️ Monitor YouTube Chat with auto-reconnect
-def monitor_chat():
-    print("📺 Starting YouTube chat monitor (via API)...")
-    youtube = get_youtube_client()
-    live_chat_id = get_live_chat_id(youtube)
 
-    if not live_chat_id:
-        print("❌ No active live chat ID.")
+def monitor_chat():
+    global youtube, live_chat_id
+    print("📺 Starting YouTube chat monitor (via API)...")
+
+    if not youtube or not live_chat_id:
+        print("❌ YouTube client or live_chat_id not initialized.")
         return
 
     next_page_token = None
@@ -170,7 +184,9 @@ def monitor_chat():
                 if msg.lower().startswith("!ask "):
                     question = msg[5:].strip()
                     if question:
-                        threading.Thread(target=handle_ask_command, args=(user, question)).start()
+                        threading.Thread(
+                            target=handle_ask_command, args=(user, question)
+                        ).start()
                     else:
                         send_message(f"@{user} Please type your question after !ask 😚")
 
@@ -181,10 +197,10 @@ def monitor_chat():
             time.sleep(10)
 
 
-# 🌐 Flask Web Server
 @app.route("/")
 def hello():
     return "Sunnie Study GPT is running!"
+
 
 @app.route("/ask")
 def ask_query():
@@ -198,13 +214,15 @@ def ask_query():
     except Exception as e:
         return f"❌ Error: {e}"
 
-# 🚀 Run Flask and Monitor Chat
+
 if __name__ == "__main__":
-    # Run Flask server in a background thread
+    if not init_youtube():
+        print("❌ Initialization failed. Exiting.")
+        exit(1)
+
     def run_flask():
         app.run(host="0.0.0.0", port=10000)
 
     threading.Thread(target=run_flask).start()
 
-    # Run monitor_chat in main thread (MUST be main thread due to signal limitations)
     monitor_chat()
