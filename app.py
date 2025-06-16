@@ -28,7 +28,7 @@ client = InferenceClient(token=HF_API_KEY)
 messages = [
     {
         "role": "assistant",
-        "content": "Hello! I'm Sunnie Study GPT 🌞 — your friendly study buddy! Ask me anything, or just tell me how you're feeling today.",
+        "content": "Hello! I'm Sunnie Study GPT \ud83c\udf1e \u2014 your friendly study buddy! Ask me anything, or just tell me how you're feeling today.",
     }
 ]
 
@@ -39,10 +39,8 @@ recent_message_ids = set()
 def get_youtube_client():
     creds = None
     if Path(TOKEN_FILE).exists():
-        print("🔐 Loading credentials from saved file...")
         creds = Credentials.from_authorized_user_file(TOKEN_FILE)
     else:
-        print("🪪 Loading credentials from environment...")
         creds = Credentials(
             token=YOUTUBE_ACCESS_TOKEN,
             refresh_token=YOUTUBE_REFRESH_TOKEN,
@@ -51,12 +49,10 @@ def get_youtube_client():
             client_secret=YOUTUBE_CLIENT_SECRET
         )
     if creds.expired and creds.refresh_token:
-        print("🔁 Access token expired, refreshing...")
         creds.refresh(Request())
         try:
             with open(TOKEN_FILE, "w") as f:
                 f.write(creds.to_json())
-            print("✅ Token refreshed and saved.")
         except Exception as e:
             print(f"❌ Failed to save token: {e}")
     return build("youtube", "v3", credentials=creds)
@@ -79,13 +75,10 @@ def send_message(text):
     try:
         youtube = get_youtube_client()
         if not youtube:
-            print("❌ YouTube client not initialized.")
             return
         live_chat_id = get_live_chat_id(youtube)
         if not live_chat_id:
-            print("❌ live_chat_id is None, skipping send.")
             return
-        print(f"📤 Sending message to chat: {text}")
         youtube.liveChatMessages().insert(
             part="snippet",
             body={
@@ -96,14 +89,12 @@ def send_message(text):
                 }
             },
         ).execute()
-        print("✅ Message sent successfully.")
     except Exception as e:
         print(f"❌ send_message() error: {e}")
 
 # 🧠 Call Hugging Face LLM
 def ask_sunnie(question):
     prompt = f"{question} - reply like a friendly study assistant named Sunnie Study GPT. Under 200 characters, no token count info."
-    print(f"🤖 Asking Sunnie: {question}")
     messages = [
         {"role": "system", "content": "You're Sunnie Study GPT 🌞 — a friendly, helpful study assistant. Answer warmly and simply. Under 200 characters, no token count info."},
         {"role": "user", "content": prompt}
@@ -120,7 +111,6 @@ def ask_sunnie(question):
     for chunk in stream:
         if chunk.choices[0].delta.get("content"):
             reply += chunk.choices[0].delta["content"]
-    print(f"🤖 Sunnie replied: {reply}")
     return reply[:200]
 
 # 🌟 Handle !ask in a separate thread
@@ -147,7 +137,6 @@ def monitor_chat():
     youtube = get_youtube_client()
     live_chat_id = get_live_chat_id(youtube)
     if not live_chat_id:
-        print("❌ No active live chat ID.")
         return
     next_page_token = None
     global recent_message_ids
@@ -178,11 +167,11 @@ def monitor_chat():
             if len(recent_message_ids) > 100:
                 recent_message_ids.clear()
 
-            time.sleep(3)
+            time.sleep(7)  # ⏱️ Slowed down polling to reduce quota usage
 
         except Exception as e:
             print(f"❌ YouTube API monitor_chat error: {e}")
-            time.sleep(10)
+            time.sleep(15)
 
 # 🌐 Flask Web Server
 @app.route("/")
