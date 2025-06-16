@@ -125,33 +125,40 @@ def handle_ask_command(username, question):
 
 # 👁️ Monitor YouTube Chat with auto-reconnect
 def monitor_chat():
-    print("📺 Starting YouTube chat monitor...")
+    print("📺 Starting YouTube chat monitor (via API)...")
+    youtube = get_youtube_client()
+    live_chat_id = get_live_chat_id(youtube)
+
+    if not live_chat_id:
+        print("❌ No active live chat ID.")
+        return
+
+    next_page_token = None
 
     while True:
         try:
-            chat = pytchat.create(video_id=VIDEO_ID)
-            print("🔁 pytchat connection established.")
+            response = get_chat_messages(youtube, live_chat_id, next_page_token)
+            next_page_token = response.get("nextPageToken")
+            items = response.get("items", [])
 
-            while chat.is_alive():
-                for c in chat.get().sync_items():
-                    msg = c.message
-                    user = c.author.name
-                    print(f"💬 {user}: {msg}")
+            for item in items:
+                user = item["authorDetails"]["displayName"]
+                msg = item["snippet"]["textMessageDetails"]["messageText"]
+                print(f"💬 {user}: {msg}")
 
-                    if msg.lower().startswith("!ask "):
-                        question = msg[5:].strip()
-                        if question:
-                            threading.Thread(target=handle_ask_command, args=(user, question)).start()
-                        else:
-                            send_message(f"@{user} Please type your question after !ask 😚")
+                if msg.lower().startswith("!ask "):
+                    question = msg[5:].strip()
+                    if question:
+                        threading.Thread(target=handle_ask_command, args=(user, question)).start()
+                    else:
+                        send_message(f"@{user} Please type your question after !ask 😚")
 
-                time.sleep(1)
+            time.sleep(3)
 
-            print("⚠️ Chat disconnected. Reconnecting...")
         except Exception as e:
-            print(f"❌ monitor_chat() error: {e}")
-            print("⏳ Retrying in 10 seconds...")
+            print(f"❌ YouTube API monitor_chat error: {e}")
             time.sleep(10)
+
 
 # 🌐 Flask Web Server
 @app.route("/")
