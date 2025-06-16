@@ -7,8 +7,12 @@ import pytchat
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
+import json
+from pathlib import Path
 
 app = Flask(__name__)
+
+TOKEN_FILE = "youtube_token.json"
 
 # 🔐 Environment Variables
 HF_API_KEY = os.getenv("HF_API_KEY")
@@ -31,20 +35,37 @@ messages = [
 
 # 🔌 YouTube API Client
 def get_youtube_client():
-    creds = Credentials(
-        token=YOUTUBE_ACCESS_TOKEN,
-        refresh_token=YOUTUBE_REFRESH_TOKEN,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=YOUTUBE_CLIENT_ID,
-        client_secret=YOUTUBE_CLIENT_SECRET
-    )
+    creds = None
 
+    # ✅ Load credentials from file if exists
+    if Path(TOKEN_FILE).exists():
+        print("🔐 Loading credentials from saved file...")
+        creds = Credentials.from_authorized_user_file(TOKEN_FILE)
+
+    else:
+        print("🪪 Loading credentials from environment...")
+        creds = Credentials(
+            token=os.getenv("YOUTUBE_ACCESS_TOKEN"),
+            refresh_token=os.getenv("YOUTUBE_REFRESH_TOKEN"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.getenv("YOUTUBE_CLIENT_ID"),
+            client_secret=os.getenv("YOUTUBE_CLIENT_SECRET")
+        )
+
+    # 🔄 Refresh if expired
     if creds.expired and creds.refresh_token:
         print("🔁 Access token expired, refreshing...")
         creds.refresh(Request())
 
-    return build("youtube", "v3", credentials=creds)
+        # 💾 Save updated token
+        try:
+            with open(TOKEN_FILE, "w") as f:
+                f.write(creds.to_json())
+            print("✅ Token refreshed and saved.")
+        except Exception as e:
+            print(f"❌ Failed to save token: {e}")
 
+    return build("youtube", "v3", credentials=creds)
 # 📺 Get Live Chat ID
 def get_live_chat_id(youtube):
     try:
